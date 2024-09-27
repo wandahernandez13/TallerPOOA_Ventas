@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechnoMarket | Lista de Etiquetas</title>
+</head>
+<body>
+    <h1>Lista de Etiquetas</h1>
+    <a href="{% url 'agregar_etiqueta' %}" class="btn btn-success">Agregar Nueva Etiqueta</a>
+    <ul>
+        {% for etiqueta in etiquetas %}
+        <li>{{ etiqueta.nombre }}
+            <a href="{% url 'editar_etiqueta' etiqueta.pk %}">Editar</a> -
+            <a href="{% url 'eliminar_etiqueta' etiqueta.pk %}">Eliminar</a>
+        </li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'inicio' %}">Volver al Inicio</a>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inicio | Tienda de Tecnología</title>
+</head>
+<body>
+    <h1>Bienvenido a TechnoMarket</h1>
+    <p>Gestión de inventarios y ventas de productos tecnológicos</p>
+
+    {% block content %}
+    <h1>Sistema de Información</h1>
+    <p>Total de productos: {{ total_productos }}</p>
+    <p>Total de clientes: {{ total_clientes }}</p>
+    <p>Total de ventas: {{ total_ventas }}</p>
+    {% endblock %}
+
+    <h2>Opciones disponibles:</h2>
+    <ul>
+        <li><a href="{% url 'listar_productos' %}">Gestionar Productos</a></li>
+        <li><a href="{% url 'listar_categorias' %}">Gestionar Categorías</a></li>
+        <li><a href="{% url 'listar_proveedores' %}">Gestionar Proveedores</a></li>
+        <li><a href="{% url 'listar_clientes' %}">Gestionar Clientes</a></li>
+        <li><a href="{% url 'listar_ventas' %}">Ver Ventas Registradas</a></li>
+        <li><a href="{% url 'registrar_venta' %}">Registrar una Venta</a></li>
+        <li><a href="{% url 'reporte_ventas' %}">Generar Reporte de Ventas</a></li>
+    </ul>
+</body>
+</html>

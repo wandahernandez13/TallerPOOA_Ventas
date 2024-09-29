@@ -1,6 +1,22 @@
+import csv
+import openpyxl
+from reportlab.pdfgen import canvas
+import io
+from io import BytesIO
+import tempfile
+from reportlab.lib.pagesizes import letter
+import matplotlib.pyplot as plt
+from django.db.models import Sum
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Producto, DetalleProducto, Categoria, Proveedor, Cliente, Ventas, Etiqueta
-from .forms import ProductoForm, DetalleProductoForm, CategoriaForm, ProveedorForm, ClienteForm, VentasForm, EtiquetaForm
+from django.utils.dateparse import parse_date
+from django.http import HttpResponse
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.decorators import permission_required
+from allauth.account.signals import user_signed_up
+from django.dispatch import receiver
+from django.contrib.auth.models import Group
+from .models import Producto, DetalleProducto, Categoria, Proveedor, Cliente, Ventas
+from .forms import ProductoForm, DetalleProductoForm, CategoriaForm, ProveedorForm, ClienteForm, VentasForm
 
 #INICIO
 
@@ -14,6 +30,30 @@ def inicio(request):
         'total_ventas': total_ventas,
     }
     return render(request, 'ventas/inicio.html', context)
+
+def register(request):
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('login')
+        else:
+            return render(request, 'ventas/register.html', {'form': form})
+    else:
+        form = UserCreationForm()
+    return render(request, 'ventas/register.html', {'form': form})
+
+@receiver(user_signed_up)
+
+def assign_user_group(sender, request, user, **kwargs):
+    group = Group.object.get(name='Usuarios Regulares')
+    user.groups.add(group)
+
+def my_view(request):
+    if not request.user.has_perm('ventas.view_producto'):
+        return redirect('no-access')
+
+@permission_required('ventas.view_producto', raise_exception=True)
 
 #PRODUCTO
 
@@ -44,6 +84,8 @@ def agregar_producto(request):
          'producto_form': producto_form,
          'detalle_form': detalle_form
      })
+
+from django.shortcuts import get_object_or_404
 
 def detalle_producto(request, pk):
     producto = get_object_or_404(Producto, pk=pk)
@@ -187,60 +229,153 @@ def eliminar_cliente(request, pk):
 #VENTAS
 
 def listar_ventas(request):
-    ventas = Ventas.objects.all()
+    ventas = Ventas.objects.all().select_related('producto', 'cliente')
     return render(request, 'ventas/listar_ventas.html', {'ventas': ventas})
 
-def agregar_venta(request):
+def registrar_venta(request):
     if request.method == 'POST':
         form = VentasForm(request.POST)
         if form.is_valid():
-            form.save()
-            return redirect('listar_ventas')
+            venta = form.save(commit=False)
+            producto = venta.producto
+
+            if producto.cantidad >= venta.cantidad:
+                venta.total = producto.precio * venta.cantidad
+
+                producto.cantidad -= venta.cantidad
+                producto.save()
+
+                venta.save()  
+                return redirect('listar_ventas')
+            else:
+                form.add_error('cantidad', 'No hay suficiente stock para realizar esta venta.')
     else:
         form = VentasForm()
-    return render(request, 'ventas/agregar_venta.html', {'form': form})
 
-def editar_venta(request, pk):
-    ventas = get_object_or_404(Ventas, pk=pk)
-    if request.method == 'POST':
-        form = VentasForm(request.POST, instance=ventas)
-        if form.is_valid():
-            form.save()
-            return redirect('listar_ventas')
-    else:
-        form = VentasForm(instance=ventas)
-    return render(request, 'ventas/editar_etiquetas.html', {'ventas': ventas})
+    return render(request, 'ventas/registrar_venta.html', {'form': form})
 
-#ETIQUETA
+def reporte_ventas(request):
+    ventas = Ventas.objects.all()
+    fecha_inicio = request.GET.get('fecha_inicio')
+    fecha_fin = request.GET.get('fecha_fin')
+    cliente_id = request.GET.get('cliente_id')
+    producto_id = request.GET.get('producto_id')
 
-def listar_etiquetas(request):
-    etiquetas = Etiqueta.objects.all()
-    return render(request, 'ventas/listar_etiquetas.html', {'etiquetas': etiquetas})
+    if fecha_inicio and fecha_fin:
+        ventas = ventas.filter(fecha_venta__range=[parse_date(fecha_inicio), parse_date(fecha_fin)])
 
-def agregar_etiqueta(request):
-    if request.method == 'POST':
-        form = EtiquetaForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return redirect('listar_etiquetas')
-    else:
-        form = EtiquetaForm()
-    return render(request, 'ventas/agregar_etiqueta.html', {'form': form})
+    if cliente_id:
+        ventas = ventas.filter(cliente_id=cliente_id)
 
-def editar_etiqueta(request, pk):
-    etiqueta = get_object_or_404(Etiqueta, pk=pk)
-    if request.method == 'POST':
-        form = EtiquetaForm(request.POST, instance=etiqueta)
-        if form.is_valid():
-            form.save()
-            return redirect('listar_etiquetas')
-    else:
-        form = EtiquetaForm(instance=etiqueta)
-    return render(request, 'ventas/editar_etiquetas.html', {'form': form})
+    if producto_id:
+        ventas = ventas.filter(producto_id=producto_id)
 
-def eliminar_etiqueta(request, pk):
-    etiqueta = get_object_or_404(Etiqueta, pk=pk)
-    if request.method == 'POST':
-        etiqueta.delete()
-        return redirect('listar_etiqueta')
-    return render(request, 'ventas/eliminar_etiqueta.html', {'etiqueta': etiqueta})
+    return render(request, 'ventas/reporte_ventas.html', {'ventas': ventas})
+
+def exportar_reporte_ventas_csv(request):
+    ventas = Ventas.objects.all()
+
+    fecha_inicio = request.GET.get('fecha_inicio')
+    fecha_fin = request.GET.get('fecha_fin')
+    cliente_id = request.GET.get('cliente_id')
+    producto_id = request.GET.get('producto_id')
+
+    if fecha_inicio and fecha_fin:
+        ventas = ventas.filter(fecha_venta__range=[parse_date(fecha_inicio), parse_date(fecha_fin)])
+
+    if cliente_id:
+        ventas = ventas.filter(cliente_id=cliente_id)
+
+    if producto_id:
+        ventas = ventas.filter(producto_id=producto_id)
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="reporte_ventas.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(['Fecha de Venta', 'Producto', 'Cliente', 'Cantidad', 'Total'])
+
+    for venta in ventas:
+        writer.writerow([venta.fecha_venta, venta.producto.nombre, venta.cliente.nombre, venta.cantidad, venta.total])
+
+    return response
+
+
+def exportar_reporte_ventas_excel(request):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Reporte de Ventas'
+
+    ws.append(['Fecha', 'Producto', 'Cliente', 'Cantidad', 'Total'])
+
+    ventas = Ventas.objects.all().select_related('producto', 'cliente')
+
+    for venta in ventas:
+        fecha_venta = venta.fecha_venta.replace(tzinfo=None) if venta.fecha_venta else None
+        ws.append([fecha_venta, venta.producto.nombre, venta.cliente.nombre, venta.cantidad, venta.total])
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename=Reporte_Ventas.xlsx'
+
+    from io import BytesIO
+    buffer = BytesIO()
+    wb.save(buffer)
+    response.write(buffer.getvalue())
+
+    return response
+
+def exportar_reporte_ventas_pdf(request):
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename=Reporte_Ventas.pdf'
+
+    c = canvas.Canvas(response, pagesize=letter)
+    width, height = letter
+
+    c.drawString(100, height - 100, 'Reporte de Ventas')
+    c.drawString(50, height - 130, 'Fecha')
+    c.drawString(150, height - 130, 'Producto')
+    c.drawString(300, height - 130, 'Cliente')
+    c.drawString(450, height - 130, 'Cantidad')
+    c.drawString(500, height - 130, 'Total')
+
+    ventas = Ventas.objects.all().select_related('producto', 'cliente')
+    y = height - 160
+
+    for venta in ventas:
+        c.drawString(50, y, str(venta.fecha_venta))
+        c.drawString(150, y, venta.producto.nombre)
+        c.drawString(300, y, venta.cliente.nombre)
+        c.drawString(450, y, str(venta.cantidad))
+        c.drawString(500, y, str(venta.total))
+        y -= 20
+
+    productos = Producto.objects.all()
+    cantidades = []
+    nombres_productos = []
+
+    for producto in productos:
+        total_cantidad = Ventas.objects.filter(producto=producto).aggregate(Sum('cantidad'))['cantidad__sum'] or 0
+        cantidades.append(total_cantidad)
+        nombres_productos.append(producto.nombre)
+
+    plt.figure(figsize=(6, 4))
+    plt.bar(nombres_productos, cantidades, color='blue')
+    plt.xlabel('Producto')
+    plt.ylabel('Cantidad Vendida')
+    plt.title('Ventas por Producto')
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()  
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+        temp_file.write(buf.getvalue())
+        temp_file_path = temp_file.name
+
+    c.drawImage(temp_file_path, 100, 200, width=400, height=300)
+
+    c.showPage()
+    c.save()
+
+    return response

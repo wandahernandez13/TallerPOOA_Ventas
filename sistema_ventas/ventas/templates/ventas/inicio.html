@@ -10,7 +10,7 @@
     <p>Gestión de inventarios y ventas de productos tecnológicos</p>
 
     {% block content %}
-    <h1>Sistema de Información</h1>
+    <h2>Sistema de Información</h2>
     <p>Total de productos: {{ total_productos }}</p>
     <p>Total de clientes: {{ total_clientes }}</p>
     <p>Total de ventas: {{ total_ventas }}</p>
@@ -18,6 +18,7 @@
 
     <h2>Opciones disponibles:</h2>
     <ul>
+        <li><a href="{% url 'agregar_producto' %}">Agregar Productos</a</li>
         <li><a href="{% url 'listar_productos' %}">Gestionar Productos</a></li>
         <li><a href="{% url 'listar_categorias' %}">Gestionar Categorías</a></li>
         <li><a href="{% url 'listar_proveedores' %}">Gestionar Proveedores</a></li>

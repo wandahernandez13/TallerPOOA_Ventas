@@ -1,6 +1,29 @@
 from django.db import models
+from django.contrib.auth.models import User
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
+# Create your models here.
 
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    role = models.CharField(max_length=100, choices=[
+        ('Administrador', 'Administrador'),
+        ('Gerente', 'Gerente'),
+        ('Usuario Regular', 'Usuario Regular')
+    ], default='Usuario Regular')
+
+    def __str__(self):
+        return str(self.user.username)
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        Profile.Objects.create(user=instance)
+
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    instance.profile.save()
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField()
@@ -10,7 +33,7 @@ class Categoria(models.Model):
 
 class Proveedor(models.Model):
     nombre = models.CharField(max_length=100)
-    email = models.EmailField()
+    contacto = models.CharField(max_length=100)
     telefono = models.CharField(max_length=15)
 
     def __str__(self):
@@ -34,16 +57,11 @@ class Producto(models.Model):
 
     def __str__(self):
         return str(self.nombre)
-    
-    def reducir_stock(self, cantidad):
-        self.stock -= cantidad
-        self.save()
 
 class DetalleProducto(models.Model):
     producto = models.OneToOneField(Producto, on_delete=models.CASCADE)
     especificaciones = models.TextField()
-    fabricante = models.CharField(max_length=100, null=True, blank=True)
-    fecha_fabricacion = models.DateField(null=True, blank=True)
+    fecha_vencimiento = models.DateField(null=True, blank=True)
 
     def __str__(self):
         return f"Detalles de {self.producto.nombre}"
@@ -52,6 +70,7 @@ class Cliente(models.Model):
     nombre = models.CharField(max_length=100)
     telefono = models.CharField(max_length=15)
     email = models.TextField(max_length=50)
+    direccion = models.CharField(max_length=100)
 
     def __str__(self):
         return str(self.nombre)
@@ -65,9 +84,4 @@ class Ventas(models.Model):
     fecha_venta = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f'Venta de {self.producto.nombre} a {self.cliente.nombre} el {self.fecha_venta}'
-    
-    def save(self, *args, **kwargs):
-        self.producto.reducir_stock(self.cantidad)
-        self.precio_total = self.cantidad * self.producto.precio
-        super(Ventas, self).save(*args, **kwargs)  
+        return f"Venta de {self.cantidad} x {self.producto.nombre} a {self.cliente.nombre} el {self.fecha_venta} por {self.total}"
